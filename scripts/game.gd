@@ -421,7 +421,7 @@ func _build_ui() -> void:
 	fire_button.add_theme_font_size_override("font_size", 22)
 	fire_button.pressed.connect(_on_fire_pressed)
 	fire_button.visible = false
-	layer.add_child(tag_button)
+	layer.add_child(fire_button)
 
 	tags_label = Label.new()
 	tags_label.position = Vector2(24, 108)
