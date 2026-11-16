@@ -44,7 +44,7 @@ jobs:
         run: |
           export HOME=/root
           mkdir -p build/android
-          godot --headless --verbose --path . --export-debug "Android" build/android/SkyboundSurvival-debug.apk
+          godot --headless --verbose --path . --install-android-build-template --export-debug "Android" build/android/SkyboundSurvival-debug.apk
           test -s build/android/SkyboundSurvival-debug.apk
 
       - name: Upload APK
