@@ -1016,7 +1016,7 @@ func _on_beacon_body_entered(body: Node3D, beacon: Area3D) -> void:
 	beacon.queue_free()
 	_update_hud()
 	if beacons.is_empty():
-		_finish_round(true)
+		message_label.text = "All supplies collected. Survive the final circle!"
 
 func _toggle_pause() -> void:
 	if not game_started or round_ended:
