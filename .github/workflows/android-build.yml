@@ -1,0 +1,44 @@
+name: Godot Android Build
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  android-debug:
+    name: Validate project and export Android APK
+    runs-on: ubuntu-latest
+    container:
+      image: barichello/godot-ci:4.5
+    steps:
+      - name: Check out project
+        uses: actions/checkout@v4
+
+      - name: Prepare Godot export templates
+        run: |
+          mkdir -p "$HOME/.local/share/godot/export_templates"
+          cp -a /root/.local/share/godot/export_templates/4.5.stable "$HOME/.local/share/godot/export_templates/"
+          mkdir -p "$HOME/.config"
+          if [ -d /root/.config/godot ]; then
+            cp -a /root/.config/godot "$HOME/.config/"
+          fi
+
+      - name: Import and validate project
+        run: godot --headless --editor --path . --quit
+
+      - name: Export Android debug APK
+        run: |
+          mkdir -p build/android
+          godot --headless --path . --export-debug "Android" build/android/SkyboundSurvival-debug.apk
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Skybound-Survival-Android-debug
+          path: build/android/SkyboundSurvival-debug.apk
+          if-no-files-found: error
+          retention-days: 14
