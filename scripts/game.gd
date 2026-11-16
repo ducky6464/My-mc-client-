@@ -497,6 +497,7 @@ func _show_main_menu() -> void:
 	tag_button.visible = false
 	zone_label.visible = false
 	energy_label.visible = false
+	tags_label.visible = false
 	message_label.text = "Best supply score: %d" % best_score
 
 func _show_settings() -> void:
@@ -551,6 +552,7 @@ func _start_game() -> void:
 	tag_button.visible = true
 	zone_label.visible = true
 	energy_label.visible = true
+	tags_label.visible = true
 	zone_ring.visible = true
 	_update_hud()
 
