@@ -2,7 +2,7 @@ extends Node3D
 
 const PlayerScript = preload("res://scripts/player.gd")
 const JoystickScript = preload("res://scripts/touch_joystick.gd")
-const ROUND_SECONDS := 180.0
+const ROUND_SECONDS := 240.0
 const MAP_SIZE := 220.0
 const START_ZONE_RADIUS := 104.0
 const FINAL_ZONE_RADIUS := 18.0
@@ -49,6 +49,13 @@ var sensitivity_slider: HSlider
 var round_ended := false
 var is_paused := false
 var game_started := false
+var drop_state := "grounded"
+var drop_elapsed := 0.0
+var descent_elapsed := 0.0
+var drop_ship: Node3D
+var drop_start := Vector3(-96.0, 58.0, -78.0)
+var drop_end := Vector3(96.0, 58.0, 78.0)
+var landing_position := Vector3.ZERO
 var overlay_mode := "menu"
 var energy := 100.0
 var zone_radius := START_ZONE_RADIUS
@@ -568,9 +575,10 @@ func _start_game() -> void:
 	_clear_weapon_pickups()
 	_build_weapon_pickups()
 	scout_retarget_timer = 0.0
-	player.position = Vector3(0, 0.2, 0)
+	player.position = Vector3(0, 58.0, 0)
 	player.velocity = Vector3.ZERO
-	player.set_physics_process(true)
+	player.set_physics_process(false)
+	drop_state = "grounded"
 	for beacon in beacons:
 		if is_instance_valid(beacon):
 			beacon.queue_free()
@@ -585,34 +593,150 @@ func _start_game() -> void:
 		scouts[i].visible = true
 		scout_targets[i] = null
 	overlay.visible = false
-	pause_button.visible = true
+	pause_button.visible = false
 	pause_button.disabled = false
-	joystick.visible = true
-	jump_button.visible = true
-	fire_button.visible = true
-	swap_button.visible = true
+	joystick.visible = false
+	jump_button.visible = false
+	fire_button.visible = false
+	swap_button.visible = false
 	weapon_label.visible = true
 	zone_label.visible = true
 	energy_label.visible = true
 	tags_label.visible = true
 	zone_ring.visible = true
+	_begin_drop_sequence()
 	_update_hud()
 
 func _process(delta: float) -> void:
 	if game_started and not round_ended and not is_paused:
-		elapsed += delta
-		seconds_left = maxf(0.0, ROUND_SECONDS - elapsed)
-		zone_radius = lerpf(START_ZONE_RADIUS, FINAL_ZONE_RADIUS, clampf(elapsed / ROUND_SECONDS, 0.0, 1.0))
-		zone_ring.scale = Vector3(zone_radius, 1.0, zone_radius)
-		_update_survival_energy(delta)
-		_update_scouts(delta)
-		if fire_held:
-			_on_fire_pressed()
-		_update_projectiles(delta)
-		if seconds_left <= 0.0:
-			_finish_round(true)
-		_update_timer()
-		_update_match_labels()
+		if drop_state != "grounded":
+			_update_drop_sequence(delta)
+		else:
+			elapsed += delta
+			seconds_left = maxf(0.0, ROUND_SECONDS - elapsed)
+			if elapsed < 45.0:
+				zone_radius = START_ZONE_RADIUS
+			elif elapsed < 120.0:
+				zone_radius = lerpf(START_ZONE_RADIUS, 55.0, (elapsed - 45.0) / 75.0)
+			else:
+				zone_radius = lerpf(55.0, FINAL_ZONE_RADIUS, clampf((elapsed - 120.0) / 120.0, 0.0, 1.0))
+			zone_ring.scale = Vector3(zone_radius, 1.0, zone_radius)
+			_update_survival_energy(delta)
+			_update_scouts(delta)
+			if fire_held:
+				_on_fire_pressed()
+			_update_projectiles(delta)
+			if seconds_left <= 0.0:
+				_finish_round(true)
+			_update_timer()
+			_update_match_labels()
+	if player and joystick and not is_paused and game_started and not round_ended and drop_state == "grounded":
+		player.set_move_input(joystick.value)
+	fps_update_accumulator += delta
+	if fps_update_accumulator >= 0.25:
+		fps_update_accumulator = 0.0
+		fps_label.text = "FPS: %d" % Engine.get_frames_per_second()
+
+func _begin_drop_sequence() -> void:
+	drop_state = "flight"
+	drop_elapsed = 0.0
+	descent_elapsed = 0.0
+	if is_instance_valid(drop_ship):
+		drop_ship.queue_free()
+	drop_ship = Node3D.new()
+	drop_ship.name = "VoxelDropShip"
+	var hull_mat := _drop_material(Color(0.28, 0.36, 0.43))
+	var wing_mat := _drop_material(Color(0.16, 0.23, 0.3))
+	var window_mat := _drop_material(Color(0.18, 0.78, 0.94), true)
+	_add_drop_part(drop_ship, Vector3.ZERO, Vector3(2.2, 1.4, 8.0), hull_mat)
+	_add_drop_part(drop_ship, Vector3(0, 0.1, -0.4), Vector3(15.0, 0.28, 2.4), wing_mat)
+	_add_drop_part(drop_ship, Vector3(0, 1.0, 2.7), Vector3(5.0, 0.22, 1.5), wing_mat)
+	_add_drop_part(drop_ship, Vector3(0, 0.65, -1.3), Vector3(1.3, 0.8, 2.0), window_mat)
+	add_child(drop_ship)
+	drop_ship.position = drop_start
+	player.position = drop_start + Vector3(0, -2.2, 4.0)
+	player.look_at(Vector3(drop_start.x + 1.0, drop_start.y - 2.0, drop_start.z - 8.0), Vector3.UP)
+	player.set_physics_process(false)
+	overlay_mode = "drop"
+	overlay.visible = true
+	overlay_title.text = "DROP SHIP INBOUND"
+	overlay_button.text = "JUMP NOW"
+	overlay_button.visible = true
+	menu_settings_button.visible = false
+	settings_label.visible = false
+	sensitivity_slider.visible = false
+	message_label.text = "Choose when to jump. Auto-deploy begins at the end of the flight."
+
+func _drop_material(tint: Color, glowing: bool = false) -> StandardMaterial3D:
+	var material := StandardMaterial3D.new()
+	material.albedo_color = tint
+	material.roughness = 0.85
+	if glowing:
+		material.emission_enabled = true
+		material.emission = tint
+		material.emission_energy_multiplier = 1.1
+	return material
+
+func _add_drop_part(parent: Node3D, at: Vector3, dimensions: Vector3, material: Material) -> void:
+	var part := MeshInstance3D.new()
+	var mesh := BoxMesh.new()
+	mesh.size = dimensions
+	part.mesh = mesh
+	part.position = at
+	part.material_override = material
+	part.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	parent.add_child(part)
+
+func _update_drop_sequence(delta: float) -> void:
+	if drop_state == "flight":
+		drop_elapsed += delta
+		var progress := clampf(drop_elapsed / 9.0, 0.0, 1.0)
+		var ship_position := drop_start.lerp(drop_end, progress)
+		if is_instance_valid(drop_ship):
+			drop_ship.position = ship_position
+			var direction := (drop_end - drop_start).normalized()
+			drop_ship.look_at(ship_position + direction, Vector3.UP)
+		player.position = ship_position + Vector3(0, -2.2, 4.0)
+		if drop_elapsed >= 9.0:
+			_jump_from_drop_ship()
+	elif drop_state == "descending":
+		descent_elapsed += delta
+		var progress := clampf(descent_elapsed / 3.0, 0.0, 1.0)
+		player.position = Vector3(landing_position.x, lerpf(55.8, 0.2, progress), landing_position.z)
+		if progress >= 1.0:
+			_finish_landing()
+
+func _jump_from_drop_ship() -> void:
+	if drop_state != "flight":
+		return
+	drop_state = "descending"
+	descent_elapsed = 0.0
+	var progress := clampf(drop_elapsed / 9.0, 0.0, 1.0)
+	var ship_position := drop_start.lerp(drop_end, progress)
+	landing_position = Vector3(clampf(ship_position.x + 7.0, -MAP_SIZE * 0.44, MAP_SIZE * 0.44), 0.2, clampf(ship_position.z + 5.0, -MAP_SIZE * 0.44, MAP_SIZE * 0.44))
+	if is_instance_valid(drop_ship):
+		drop_ship.visible = false
+	overlay_button.disabled = true
+	overlay_title.text = "DEPLOYING..."
+	overlay_button.text = "LANDING"
+	message_label.text = "Gliding toward the island..."
+
+func _finish_landing() -> void:
+	drop_state = "grounded"
+	player.position = landing_position
+	player.velocity = Vector3.ZERO
+	player.set_physics_process(true)
+	if is_instance_valid(drop_ship):
+		drop_ship.queue_free()
+	pause_button.visible = true
+	joystick.visible = true
+	jump_button.visible = true
+	fire_button.visible = true
+	swap_button.visible = true
+	overlay.visible = false
+	overlay_button.disabled = false
+	message_label.text = "LANDING COMPLETE! Loot supplies and be the last one standing."
+	_update_match_labels()
 	if player and joystick and not is_paused and game_started and not round_ended:
 		player.set_move_input(joystick.value)
 	fps_update_accumulator += delta
@@ -915,6 +1039,8 @@ func _on_overlay_button_pressed() -> void:
 	match overlay_mode:
 		"menu":
 			_start_game()
+		"drop":
+			_jump_from_drop_ship()
 		"settings":
 			_show_main_menu()
 		"pause":
@@ -944,11 +1070,11 @@ func _finish_round(won: bool) -> void:
 	var leading_score := 0
 	for scout_score in scout_scores:
 		leading_score = maxi(leading_score, scout_score)
-	var player_won := won and score >= leading_score
-	overlay_title.text = "YOU SURVIVED!" if player_won else "SCOUT CREW WINS"
+	var player_won := won
+	overlay_title.text = "YOU ARE THE CHAMPION!" if player_won else "SCOUT CREW WINS"
 	overlay_button.text = "PLAY AGAIN"
 	overlay_button.visible = true
-	message_label.text = "Supplies collected: %d | Best scout: %d" % [score, leading_score]
+	message_label.text = "Supplies collected: %d | Bots remaining: %d" % [score, SCOUT_COUNT - tagged_bots]
 	if score > best_score:
 		best_score = score
 		_save_progress()
@@ -957,7 +1083,9 @@ func _update_match_labels() -> void:
 	var leading_score := 0
 	for scout_score in scout_scores:
 		leading_score = maxi(leading_score, scout_score)
-	score_label.text = "SUPPLIES: %d  |  SCOUT LEAD: %d" % [score, leading_score]
+	var phase := "LOOT PHASE" if elapsed < 45.0 else ("STORM CLOSING" if elapsed < 180.0 else "FINAL CIRCLE")
+	score_label.text = "BOTS LEFT: %d  |  SUPPLIES: %d" % [SCOUT_COUNT - tagged_bots, score]
+	message_label.text = phase
 	tags_label.text = "HITS TAKEN: %d/3  |  BOTS OUT: %d/%d" % [player_tags, tagged_bots, SCOUT_COUNT]
 	weapon_label.text = "BLASTER: %s  |  COLLECTED: %d/8" % [WEAPON_DATA[current_weapon]["name"], owned_weapons.size()]
 	swap_button.disabled = owned_weapons.size() < 2
