@@ -13,6 +13,7 @@ const BEACON_COUNT := 24
 var player: CharacterBody3D
 var joystick: TouchJoystick
 var jump_button: Button
+var tag_button: Button
 var score := 0
 var seconds_left := ROUND_SECONDS
 var elapsed := 0.0
@@ -43,6 +44,12 @@ var zone_ring: MeshInstance3D
 var beacons: Array[Area3D] = []
 var scouts: Array[Node3D] = []
 var scout_scores: Array[int] = []
+var scout_tagged: Array[bool] = []
+var scout_contact_cooldowns: Array[float] = []
+var player_tags := 0
+var player_tag_cooldown := 0.0
+var tagged_bots := 0
+var tags_label: Label
 var scout_targets: Array[Area3D] = []
 var scout_retarget_timer := 0.0
 var beacon_mesh: CylinderMesh
@@ -300,6 +307,8 @@ func _build_scouts() -> void:
 		add_child(scout)
 		scouts.append(scout)
 		scout_scores.append(0)
+		scout_tagged.append(false)
+		scout_contact_cooldowns.append(0.0)
 		scout_targets.append(null)
 
 func _build_player() -> void:
@@ -397,6 +406,26 @@ func _build_ui() -> void:
 	jump_button.visible = false
 	layer.add_child(jump_button)
 
+	tag_button = Button.new()
+	tag_button.text = "TAG"
+	tag_button.anchor_left = 1.0
+	tag_button.anchor_top = 1.0
+	tag_button.anchor_right = 1.0
+	tag_button.anchor_bottom = 1.0
+	tag_button.position = Vector2(-150, -220)
+	tag_button.size = Vector2(112, 66)
+	tag_button.add_theme_font_size_override("font_size", 22)
+	tag_button.pressed.connect(_on_tag_pressed)
+	tag_button.visible = false
+	layer.add_child(tag_button)
+
+	tags_label = Label.new()
+	tags_label.position = Vector2(24, 108)
+	tags_label.size = Vector2(260, 28)
+	tags_label.add_theme_font_size_override("font_size", 17)
+	tags_label.add_theme_color_override("font_color", Color(1.0, 0.82, 0.48))
+	layer.add_child(tags_label)
+
 	overlay = ColorRect.new()
 	overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	overlay.color = Color(0.015, 0.035, 0.06, 0.9)
@@ -447,7 +476,7 @@ func _build_ui() -> void:
 	panel.add_child(sensitivity_slider)
 
 	var hint := Label.new()
-	hint.text = "Explore the island, collect supply beacons, and stay inside the shrinking safe zone. Outlast the scout crew!"
+	hint.text = "OFFLINE MATCH • 1 PLAYER + 6 AI SCOUTS\nCollect supplies, stay in the safe zone, and tag nearby scouts before they tag you. No internet required."
 	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	hint.add_theme_font_size_override("font_size", 16)
@@ -465,6 +494,7 @@ func _show_main_menu() -> void:
 	pause_button.visible = false
 	joystick.visible = false
 	jump_button.visible = false
+	tag_button.visible = false
 	zone_label.visible = false
 	energy_label.visible = false
 	message_label.text = "Best supply score: %d" % best_score
@@ -493,6 +523,9 @@ func _start_game() -> void:
 	zone_radius = START_ZONE_RADIUS
 	energy = 100.0
 	score = 0
+	player_tags = 0
+	tagged_bots = 0
+	player_tag_cooldown = 0.0
 	scout_retarget_timer = 0.0
 	player.position = Vector3(0, 0.2, 0)
 	player.velocity = Vector3.ZERO
@@ -506,12 +539,16 @@ func _start_game() -> void:
 		var angle := TAU * float(i) / float(scouts.size())
 		scouts[i].position = Vector3(cos(angle) * 72.0, 0, sin(angle) * 72.0)
 		scout_scores[i] = 0
+		scout_tagged[i] = false
+		scout_contact_cooldowns[i] = 0.0
+		scouts[i].visible = true
 		scout_targets[i] = null
 	overlay.visible = false
 	pause_button.visible = true
 	pause_button.disabled = false
 	joystick.visible = true
 	jump_button.visible = true
+	tag_button.visible = true
 	zone_label.visible = true
 	energy_label.visible = true
 	zone_ring.visible = true
@@ -552,23 +589,44 @@ func _update_survival_energy(delta: float) -> void:
 
 func _update_scouts(delta: float) -> void:
 	scout_retarget_timer -= delta
+	player_tag_cooldown = maxf(0.0, player_tag_cooldown - delta)
 	for i in range(scouts.size()):
 		var scout := scouts[i]
-		if not is_instance_valid(scout):
+		if not is_instance_valid(scout) or scout_tagged[i]:
 			continue
-		var target := scout_targets[i]
-		if scout_retarget_timer <= 0.0 or not is_instance_valid(target):
-			target = _nearest_available_beacon(scout.global_position)
-			scout_targets[i] = target
-		if is_instance_valid(target):
-			var destination := Vector3(target.global_position.x, 0.0, target.global_position.z)
-			var current := Vector3(scout.position.x, 0.0, scout.position.z)
-			var direction := destination - current
-			if direction.length() > 0.1:
-				scout.position = scout.position.move_toward(destination, 3.0 * delta)
-				scout.rotation.y = atan2(direction.x, direction.z)
-			if scout.global_position.distance_to(target.global_position) < 1.6:
-				if is_instance_valid(target) and not bool(target.get_meta("collected", false)):
+		scout_contact_cooldowns[i] = maxf(0.0, scout_contact_cooldowns[i] - delta)
+		var distance_to_player := scout.global_position.distance_to(player.global_position)
+		var destination: Vector3
+		var movement_speed := 3.0
+		if distance_to_player < 13.0:
+			destination = Vector3(player.global_position.x, 0.0, player.global_position.z)
+			movement_speed = 4.0
+			if distance_to_player < 1.65 and scout_contact_cooldowns[i] <= 0.0:
+				player_tags += 1
+				scout_contact_cooldowns[i] = 2.0
+				message_label.text = "A scout tagged you! Keep moving!"
+				message_label.add_theme_color_override("font_color", Color(1.0, 0.55, 0.38))
+				_update_match_labels()
+				if player_tags >= 3:
+					_finish_round(false)
+					return
+		else:
+			var target := scout_targets[i]
+			if scout_retarget_timer <= 0.0 or not is_instance_valid(target):
+				target = _nearest_available_beacon(scout.global_position)
+				scout_targets[i] = target
+			if not is_instance_valid(target):
+				continue
+			destination = Vector3(target.global_position.x, 0.0, target.global_position.z)
+		var current := Vector3(scout.position.x, 0.0, scout.position.z)
+		var direction := destination - current
+		if direction.length() > 0.1:
+			scout.position = scout.position.move_toward(destination, movement_speed * delta)
+			scout.rotation.y = atan2(direction.x, direction.z)
+		if distance_to_player >= 13.0:
+			var target := scout_targets[i]
+			if is_instance_valid(target) and scout.global_position.distance_to(target.global_position) < 1.6:
+				if not bool(target.get_meta("collected", false)):
 					target.set_meta("collected", true)
 					scout_scores[i] += 1
 					target.queue_free()
@@ -576,6 +634,31 @@ func _update_scouts(delta: float) -> void:
 				scout_targets[i] = null
 	if scout_retarget_timer <= 0.0:
 		scout_retarget_timer = 1.4
+
+func _on_tag_pressed() -> void:
+	if not game_started or round_ended or is_paused or player_tag_cooldown > 0.0:
+		return
+	var nearest_index := -1
+	var nearest_distance := 4.2
+	for i in range(scouts.size()):
+		if scout_tagged[i] or not is_instance_valid(scouts[i]):
+			continue
+		var distance := player.global_position.distance_to(scouts[i].global_position)
+		if distance < nearest_distance:
+			nearest_distance = distance
+			nearest_index = i
+	if nearest_index < 0:
+		message_label.text = "Get closer to a scout to tag them."
+		return
+	scout_tagged[nearest_index] = true
+	scouts[nearest_index].visible = false
+	scout_targets[nearest_index] = null
+	tagged_bots += 1
+	player_tag_cooldown = 0.8
+	message_label.text = "Scout tagged! %d of %d out." % [tagged_bots, SCOUT_COUNT]
+	_update_match_labels()
+	if tagged_bots >= SCOUT_COUNT:
+		_finish_round(true)
 
 func _nearest_available_beacon(from_position: Vector3) -> Area3D:
 	var nearest: Area3D = null
@@ -653,6 +736,7 @@ func _finish_round(won: bool) -> void:
 	player.set_physics_process(false)
 	joystick.visible = false
 	jump_button.visible = false
+	tag_button.visible = false
 	menu_settings_button.visible = false
 	settings_label.visible = false
 	sensitivity_slider.visible = false
@@ -673,6 +757,7 @@ func _update_match_labels() -> void:
 	for scout_score in scout_scores:
 		leading_score = maxi(leading_score, scout_score)
 	score_label.text = "SUPPLIES: %d  |  SCOUT LEAD: %d" % [score, leading_score]
+	tags_label.text = "YOUR TAGS: %d/3  |  SCOUTS OUT: %d/%d" % [player_tags, tagged_bots, SCOUT_COUNT]
 	zone_label.text = "SAFE ZONE: %dm" % int(zone_radius)
 	energy_label.text = "STORM ENERGY: %d%%" % int(energy)
 
