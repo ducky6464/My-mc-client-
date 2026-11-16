@@ -47,6 +47,38 @@ jobs:
           godot --headless --verbose --path . --install-android-build-template --export-debug "Android" build/android/SkyboundSurvival-debug.apk
           test -s build/android/SkyboundSurvival-debug.apk
 
+      - name: Re-sign APK for broad Android installer compatibility
+        run: |
+          set -euo pipefail
+          BUILD_TOOLS="$(find /usr/lib/android-sdk/build-tools -type d -name '[0-9]*' | sort -V | tail -n 1)"
+          test -n "$BUILD_TOOLS"
+          APKSIGNER="$BUILD_TOOLS/apksigner"
+          ZIPALIGN="$BUILD_TOOLS/zipalign"
+          test -x "$APKSIGNER"
+          test -x "$ZIPALIGN"
+          "$ZIPALIGN" -f 4 build/android/SkyboundSurvival-debug.apk build/android/SkyboundSurvival-aligned.apk
+          "$APKSIGNER" sign \
+            --ks /root/debug.keystore \
+            --ks-key-alias androiddebugkey \
+            --ks-pass pass:android \
+            --key-pass pass:android \
+            --v1-signing-enabled true \
+            --v2-signing-enabled true \
+            --v3-signing-enabled false \
+            --out build/android/SkyboundSurvival-signed.apk \
+            build/android/SkyboundSurvival-aligned.apk
+          mv build/android/SkyboundSurvival-signed.apk build/android/SkyboundSurvival-debug.apk
+          "$APKSIGNER" verify --verbose --print-certs build/android/SkyboundSurvival-debug.apk
+          "$ZIPALIGN" -c -v 4 build/android/SkyboundSurvival-debug.apk
+          rm build/android/SkyboundSurvival-aligned.apk
+
+      - name: Verify APK package metadata
+        run: |
+          set -euo pipefail
+          BUILD_TOOLS="$(find /usr/lib/android-sdk/build-tools -type d -name '[0-9]*' | sort -V | tail -n 1)"
+          "$BUILD_TOOLS/aapt" dump badging build/android/SkyboundSurvival-debug.apk | grep -E "^package:|^sdkVersion:|^targetSdkVersion:"
+          test "$(stat -c %s build/android/SkyboundSurvival-debug.apk)" -gt 1000000
+
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
