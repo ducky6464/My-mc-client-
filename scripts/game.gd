@@ -14,6 +14,13 @@ var seconds_left := ROUND_SECONDS
 var best_score := 0
 var saved_sensitivity := 0.0035
 var score_label: Label
+var fps_label: Label
+var fps_update_accumulator := 0.0
+var last_displayed_second := -1
+var rock_mesh: SphereMesh
+var rock_material: StandardMaterial3D
+var core_mesh: SphereMesh
+var core_material: StandardMaterial3D
 var message_label: Label
 var timer_label: Label
 var pause_button: Button
@@ -38,8 +45,8 @@ func _ready() -> void:
 func _build_world() -> void:
 	var environment := WorldEnvironment.new()
 	var env := Environment.new()
-	env.background_mode = Environment.BG_SKY
-	env.sky = Sky.new()
+	env.background_mode = Environment.BG_COLOR
+	env.background_color = Color(0.055, 0.085, 0.12)
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
 	env.ambient_light_color = Color(0.62, 0.72, 0.86)
 	env.ambient_light_energy = 0.8
@@ -48,7 +55,8 @@ func _build_world() -> void:
 
 	var sun := DirectionalLight3D.new()
 	sun.rotation_degrees = Vector3(-52, -28, 0)
-	sun.light_energy = 1.15
+	sun.light_energy = 1.0
+	sun.shadow_enabled = false
 	add_child(sun)
 
 	var ground := StaticBody3D.new()
@@ -61,6 +69,7 @@ func _build_world() -> void:
 	floor_mat.albedo_color = Color(0.19, 0.31, 0.28)
 	floor_mat.roughness = 1.0
 	floor_mesh.material_override = floor_mat
+	floor_mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	ground.add_child(floor_mesh)
 	var floor_collision := CollisionShape3D.new()
 	var floor_shape := BoxShape3D.new()
@@ -69,6 +78,21 @@ func _build_world() -> void:
 	floor_collision.position.y = -0.15
 	ground.add_child(floor_collision)
 	add_child(ground)
+
+	rock_mesh = SphereMesh.new()
+	rock_mesh.radius = 0.8
+	rock_mesh.height = 1.5
+	rock_material = StandardMaterial3D.new()
+	rock_material.albedo_color = Color(0.26, 0.31, 0.34)
+	rock_material.roughness = 1.0
+	core_mesh = SphereMesh.new()
+	core_mesh.radius = 0.38
+	core_mesh.height = 0.76
+	core_material = StandardMaterial3D.new()
+	core_material.albedo_color = Color(0.25, 0.9, 1.0)
+	core_material.emission_enabled = true
+	core_material.emission = Color(0.05, 0.5, 0.9)
+	core_material.emission_energy_multiplier = 1.0
 
 	for i in range(16):
 		var angle := TAU * float(i) / 16.0
@@ -84,15 +108,10 @@ func _add_rock(at: Vector3, scale_value: float) -> void:
 	var rock := StaticBody3D.new()
 	rock.position = at
 	var mesh_instance := MeshInstance3D.new()
-	var mesh := SphereMesh.new()
-	mesh.radius = 0.8
-	mesh.height = 1.5
-	mesh_instance.mesh = mesh
+	mesh_instance.mesh = rock_mesh
 	mesh_instance.scale = Vector3(scale_value, scale_value * 0.75, scale_value)
-	var material := StandardMaterial3D.new()
-	material.albedo_color = Color(0.26, 0.31, 0.34)
-	material.roughness = 1.0
-	mesh_instance.material_override = material
+	mesh_instance.material_override = rock_material
+	mesh_instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	rock.add_child(mesh_instance)
 	var collision := CollisionShape3D.new()
 	var shape := SphereShape3D.new()
@@ -109,16 +128,9 @@ func _add_core(at: Vector3, index: int) -> void:
 	core.position = at
 	core.set_meta("collected", false)
 	var mesh_instance := MeshInstance3D.new()
-	var mesh := SphereMesh.new()
-	mesh.radius = 0.38
-	mesh.height = 0.76
-	mesh_instance.mesh = mesh
-	var material := StandardMaterial3D.new()
-	material.albedo_color = Color(0.25, 0.9, 1.0)
-	material.emission_enabled = true
-	material.emission = Color(0.05, 0.5, 0.9)
-	material.emission_energy_multiplier = 1.4
-	mesh_instance.material_override = material
+	mesh_instance.mesh = core_mesh
+	mesh_instance.material_override = core_material
+	mesh_instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	core.add_child(mesh_instance)
 	var collision := CollisionShape3D.new()
 	var shape := SphereShape3D.new()
@@ -156,6 +168,17 @@ func _build_ui() -> void:
 	timer_label.add_theme_font_size_override("font_size", 26)
 	timer_label.add_theme_color_override("font_color", Color(0.8, 0.96, 1.0))
 	layer.add_child(timer_label)
+
+	fps_label = Label.new()
+	fps_label.anchor_left = 1.0
+	fps_label.anchor_right = 1.0
+	fps_label.position = Vector2(-150, 76)
+	fps_label.size = Vector2(130, 28)
+	fps_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	fps_label.add_theme_font_size_override("font_size", 17)
+	fps_label.add_theme_color_override("font_color", Color(0.72, 0.86, 0.92, 0.9))
+	fps_label.text = "FPS: --"
+	layer.add_child(fps_label)
 
 	message_label = Label.new()
 	message_label.anchor_left = 0.5
@@ -308,8 +331,13 @@ func _process(delta: float) -> void:
 		_update_timer()
 	if player and joystick and not is_paused and game_started and not round_ended:
 		player.set_move_input(joystick.value)
-	for node in get_tree().get_nodes_in_group("rotating_cores"):
-		node.rotate_y(delta * 1.6)
+	if game_started and not is_paused and not round_ended:
+		for node in get_tree().get_nodes_in_group("rotating_cores"):
+			node.rotate_y(delta * 1.2)
+	fps_update_accumulator += delta
+	if fps_update_accumulator >= 0.25:
+		fps_update_accumulator = 0.0
+		fps_label.text = "FPS: %d" % Engine.get_frames_per_second()
 
 func _unhandled_input(event: InputEvent) -> void:
 	if not game_started or round_ended or is_paused:
@@ -396,6 +424,9 @@ func _save_progress() -> void:
 
 func _update_timer() -> void:
 	var whole_seconds := int(ceil(seconds_left))
+	if whole_seconds == last_displayed_second:
+		return
+	last_displayed_second = whole_seconds
 	timer_label.text = "%02d:%02d" % [whole_seconds / 60, whole_seconds % 60]
 	if seconds_left <= 30.0:
 		timer_label.add_theme_color_override("font_color", Color(1.0, 0.72, 0.38))
