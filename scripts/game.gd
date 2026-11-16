@@ -88,6 +88,7 @@ func _add_rock(at: Vector3, scale_value: float) -> void:
 func _add_core(at: Vector3, index: int) -> void:
 	var core := Area3D.new()
 	core.name = "EnergyCore_%02d" % index
+	core.add_to_group("rotating_cores")
 	core.position = at
 	core.set_meta("collected", false)
 	var mesh_instance := MeshInstance3D.new()
