@@ -31,6 +31,11 @@ jobs:
           export HOME=/root
           godot --headless --editor --path . --quit
 
+      - name: Launch main scene smoke test
+        run: |
+          export HOME=/root
+          godot --headless --path . --quit-after 3
+
       - name: Export Android debug APK
         run: |
           export HOME=/root
