@@ -1,24 +1,24 @@
 # Skybound Survival
 
-An Android-first, third-person 3D survival-collection prototype made with Godot 4.
+An Android-first, third-person 3D collection-survival prototype built with Godot 4.5.
 
-## Current prototype
+## Current playable prototype
 
-- Third-person player and follow camera.
+- Third-person character with a follow camera.
 - Keyboard controls for desktop testing.
-- On-screen joystick and jump button for touch devices.
-- Swipe on the right side of the screen to rotate the camera.
-- Low-poly arena obstacles.
+- On-screen movement joystick, camera swipe and jump button for touch devices.
+- Low-poly arena with solid obstacles.
 - 12 glowing energy cores to collect.
-
-This is an early prototype foundation. It does not yet include online multiplayer, a shrinking arena, character selection, menus, audio, or a finished Android export.
+- Three-minute round timer.
+- Pause/resume overlay and replay button.
+- Win condition for collecting all cores and a timeout condition.
 
 ## Open the project
 
-1. Install Godot 4.x.
-2. Download or clone this repository.
+1. Install Godot 4.5.
+2. Clone or download this repository.
 3. In Godot, import the folder containing `project.godot`.
-4. Press **F5** to run the project.
+4. Press **F6** or **F5** to run the main scene.
 
 ## Controls
 
@@ -26,7 +26,23 @@ This is an early prototype foundation. It does not yet include online multiplaye
 - Space: jump.
 - Right mouse drag: rotate camera.
 - Touch: left joystick to move, swipe the right half to look, JUMP button to jump.
+- Escape: pause.
 
-## Build status
+## Android build
 
-The Godot project source is committed to GitHub. An Android APK has **not** been built or device-tested yet. Android export requires Godot export templates and the Android build toolchain.
+The repository includes an Android debug export preset and a GitHub Actions workflow at `.github/workflows/android-build.yml`.
+
+After a push to `main`, or a manual run from the Actions tab, the workflow attempts to:
+1. Import/validate the Godot project headlessly.
+2. Export a debug APK.
+3. Upload the APK as a workflow artifact named `Skybound-Survival-Android-debug`.
+
+The first workflow run is the real check that the export setup works. The APK has not yet been confirmed as built or tested on a phone.
+
+## Not included yet
+
+- Online multiplayer or matchmaking.
+- Multiple maps and character customization.
+- Audio, accessibility options and full settings menu.
+- Cloud saves and progression.
+- Performance testing on physical Android devices.
