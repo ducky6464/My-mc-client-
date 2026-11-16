@@ -1084,8 +1084,7 @@ func _update_match_labels() -> void:
 	for scout_score in scout_scores:
 		leading_score = maxi(leading_score, scout_score)
 	var phase := "LOOT PHASE" if elapsed < 45.0 else ("STORM CLOSING" if elapsed < 180.0 else "FINAL CIRCLE")
-	score_label.text = "BOTS LEFT: %d  |  SUPPLIES: %d" % [SCOUT_COUNT - tagged_bots, score]
-	message_label.text = phase
+	score_label.text = "%s  |  BOTS LEFT: %d  |  SUPPLIES: %d" % [phase, SCOUT_COUNT - tagged_bots, score]
 	tags_label.text = "HITS TAKEN: %d/3  |  BOTS OUT: %d/%d" % [player_tags, tagged_bots, SCOUT_COUNT]
 	weapon_label.text = "BLASTER: %s  |  COLLECTED: %d/8" % [WEAPON_DATA[current_weapon]["name"], owned_weapons.size()]
 	swap_button.disabled = owned_weapons.size() < 2
