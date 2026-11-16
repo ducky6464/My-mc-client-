@@ -9,11 +9,23 @@ const FINAL_ZONE_RADIUS := 18.0
 const SAVE_PATH := "user://skybound_save.cfg"
 const SCOUT_COUNT := 6
 const BEACON_COUNT := 24
+const WEAPON_DATA := [
+	{"name": "Pulse Blaster", "cooldown": 0.32, "speed": 27.0, "life": 1.8, "radius": 0.19, "shots": 1, "spread": 0.0, "color": Color(0.22, 0.88, 1.0), "glow": Color(0.08, 0.55, 1.0)},
+	{"name": "Rapid Plasma", "cooldown": 0.13, "speed": 23.0, "life": 1.5, "radius": 0.13, "shots": 1, "spread": 0.0, "color": Color(0.35, 1.0, 0.48), "glow": Color(0.12, 0.65, 0.2)},
+	{"name": "Burst Blaster", "cooldown": 0.58, "speed": 29.0, "life": 1.7, "radius": 0.14, "shots": 3, "spread": 0.045, "color": Color(0.86, 0.48, 1.0), "glow": Color(0.5, 0.12, 0.8)},
+	{"name": "Long-range Beam", "cooldown": 0.72, "speed": 52.0, "life": 2.0, "radius": 0.10, "shots": 1, "spread": 0.0, "color": Color(0.38, 0.7, 1.0), "glow": Color(0.1, 0.35, 1.0)},
+	{"name": "Scatter Blaster", "cooldown": 0.82, "speed": 23.0, "life": 1.2, "radius": 0.12, "shots": 5, "spread": 0.13, "color": Color(1.0, 0.68, 0.28), "glow": Color(0.8, 0.28, 0.04)},
+	{"name": "Heavy Energy", "cooldown": 0.96, "speed": 18.0, "life": 2.2, "radius": 0.31, "shots": 1, "spread": 0.0, "color": Color(1.0, 0.38, 0.24), "glow": Color(0.8, 0.12, 0.04)},
+	{"name": "Dual Mini Blasters", "cooldown": 0.16, "speed": 25.0, "life": 1.6, "radius": 0.12, "shots": 2, "spread": 0.025, "color": Color(0.28, 1.0, 0.86), "glow": Color(0.04, 0.65, 0.52)},
+	{"name": "Explosive Orb", "cooldown": 1.1, "speed": 14.0, "life": 2.5, "radius": 0.32, "shots": 1, "spread": 0.0, "color": Color(0.72, 0.48, 1.0), "glow": Color(0.38, 0.12, 0.8)}
+]
 
 var player: CharacterBody3D
 var joystick: TouchJoystick
 var jump_button: Button
 var fire_button: Button
+var swap_button: Button
+var weapon_label: Label
 var score := 0
 var seconds_left := ROUND_SECONDS
 var elapsed := 0.0
@@ -52,6 +64,11 @@ var fire_cooldown := 0.0
 var projectiles: Array[Node3D] = []
 var projectile_directions: Array[Vector3] = []
 var projectile_lifetimes: Array[float] = []
+var projectile_speeds: Array[float] = []
+var projectile_radii: Array[float] = []
+var weapon_pickups: Array[Area3D] = []
+var owned_weapons: Array[int] = [0]
+var current_weapon := 0
 var tagged_bots := 0
 var tags_label: Label
 var scout_targets: Array[Area3D] = []
@@ -499,6 +516,8 @@ func _show_main_menu() -> void:
 	joystick.visible = false
 	jump_button.visible = false
 	fire_button.visible = false
+	swap_button.visible = false
+	weapon_label.visible = false
 	zone_label.visible = false
 	energy_label.visible = false
 	tags_label.visible = false
@@ -530,6 +549,9 @@ func _start_game() -> void:
 	score = 0
 	player_tags = 0
 	tagged_bots = 0
+	owned_weapons = [0]
+	current_weapon = 0
+	player.call("equip_blaster", current_weapon)
 	player_tag_cooldown = 0.0
 	fire_cooldown = 0.0
 	for projectile in projectiles:
@@ -538,6 +560,10 @@ func _start_game() -> void:
 	projectiles.clear()
 	projectile_directions.clear()
 	projectile_lifetimes.clear()
+	projectile_speeds.clear()
+	projectile_radii.clear()
+	_clear_weapon_pickups()
+	_build_weapon_pickups()
 	scout_retarget_timer = 0.0
 	player.position = Vector3(0, 0.2, 0)
 	player.velocity = Vector3.ZERO
@@ -561,6 +587,8 @@ func _start_game() -> void:
 	joystick.visible = true
 	jump_button.visible = true
 	fire_button.visible = true
+	swap_button.visible = true
+	weapon_label.visible = true
 	zone_label.visible = true
 	energy_label.visible = true
 	tags_label.visible = true
@@ -652,29 +680,39 @@ func _update_scouts(delta: float) -> void:
 func _on_fire_pressed() -> void:
 	if not game_started or round_ended or is_paused or fire_cooldown > 0.0:
 		return
-	fire_cooldown = 0.32
+	var data: Dictionary = WEAPON_DATA[current_weapon]
+	fire_cooldown = float(data["cooldown"])
 	var camera := player.camera_pivot.get_child(0) as Camera3D
-	var direction := -camera.global_transform.basis.z.normalized()
-	var projectile := Node3D.new()
-	projectile.name = "EnergyBolt"
-	var orb := MeshInstance3D.new()
-	var orb_mesh := SphereMesh.new()
-	orb_mesh.radius = 0.19
-	orb_mesh.height = 0.38
-	orb.mesh = orb_mesh
-	var material := StandardMaterial3D.new()
-	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	material.albedo_color = Color(0.22, 0.88, 1.0)
-	material.emission_enabled = true
-	material.emission = Color(0.08, 0.55, 1.0)
-	material.emission_energy_multiplier = 2.0
-	orb.material_override = material
-	projectile.add_child(orb)
-	projectile.global_position = camera.global_position + direction * 1.1
-	add_child(projectile)
-	projectiles.append(projectile)
-	projectile_directions.append(direction)
-	projectile_lifetimes.append(1.8)
+	var base_direction := -camera.global_transform.basis.z.normalized()
+	var shot_count := int(data["shots"])
+	var tint: Color = data["color"]
+	var glow: Color = data["glow"]
+	for shot_index in range(shot_count):
+		var centered_index := float(shot_index) - (float(shot_count) - 1.0) * 0.5
+		var direction := base_direction.rotated(Vector3.UP, centered_index * float(data["spread"])).normalized()
+		var projectile := Node3D.new()
+		projectile.name = "ArcadeEnergyProjectile"
+		var orb := MeshInstance3D.new()
+		var orb_mesh := SphereMesh.new()
+		orb_mesh.radius = float(data["radius"])
+		orb_mesh.height = float(data["radius"]) * 2.0
+		orb.mesh = orb_mesh
+		var material := StandardMaterial3D.new()
+		material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		material.albedo_color = tint
+		material.emission_enabled = true
+		material.emission = glow
+		material.emission_energy_multiplier = 2.0
+		orb.material_override = material
+		projectile.add_child(orb)
+		var side_offset := camera.global_transform.basis.x * centered_index * 0.07
+		projectile.global_position = camera.global_position + direction * 1.1 + side_offset
+		add_child(projectile)
+		projectiles.append(projectile)
+		projectile_directions.append(direction)
+		projectile_lifetimes.append(float(data["life"]))
+		projectile_speeds.append(float(data["speed"]))
+		projectile_radii.append(float(data["radius"]))
 
 func _update_projectiles(delta: float) -> void:
 	fire_cooldown = maxf(0.0, fire_cooldown - delta)
@@ -683,13 +721,13 @@ func _update_projectiles(delta: float) -> void:
 		if not is_instance_valid(projectile):
 			_remove_projectile(i)
 			continue
-		projectile.global_position += projectile_directions[i] * 27.0 * delta
+		projectile.global_position += projectile_directions[i] * projectile_speeds[i] * delta
 		projectile_lifetimes[i] -= delta
 		var hit_index := -1
 		for scout_index in range(scouts.size()):
 			if scout_tagged[scout_index] or not is_instance_valid(scouts[scout_index]):
 				continue
-			if projectile.global_position.distance_to(scouts[scout_index].global_position + Vector3.UP * 0.9) < 1.0:
+			if projectile.global_position.distance_to(scouts[scout_index].global_position + Vector3.UP * 0.9) < 0.82 + projectile_radii[i]:
 				hit_index = scout_index
 				break
 		if hit_index >= 0:
@@ -712,6 +750,8 @@ func _remove_projectile(index: int) -> void:
 	projectiles.remove_at(index)
 	projectile_directions.remove_at(index)
 	projectile_lifetimes.remove_at(index)
+	projectile_speeds.remove_at(index)
+	projectile_radii.remove_at(index)
 
 func _nearest_available_beacon(from_position: Vector3) -> Area3D:
 	var nearest: Area3D = null
@@ -738,6 +778,85 @@ func _unhandled_input(event: InputEvent) -> void:
 func _on_jump_pressed() -> void:
 	if game_started and not is_paused and not round_ended and player and player.is_on_floor():
 		player.velocity.y = player.jump_velocity
+
+func _build_weapon_pickups() -> void:
+	var pickup_positions := [
+		Vector3(-62, 0.9, -28), Vector3(-18, 0.9, -66),
+		Vector3(62, 0.9, -52), Vector3(82, 0.9, 18),
+		Vector3(-68, 0.9, 58), Vector3(22, 0.9, 68),
+		Vector3(8, 0.9, 34), Vector3(-8, 0.9, -30)
+	]
+	for weapon_id in range(WEAPON_DATA.size()):
+		var data: Dictionary = WEAPON_DATA[weapon_id]
+		var pickup := Area3D.new()
+		pickup.name = "WeaponPickup_%02d" % weapon_id
+		pickup.position = pickup_positions[weapon_id]
+		pickup.set_meta("weapon_id", weapon_id)
+		var mesh_instance := MeshInstance3D.new()
+		var cube := BoxMesh.new()
+		cube.size = Vector3(0.72, 0.42, 0.72)
+		mesh_instance.mesh = cube
+		var material := StandardMaterial3D.new()
+		material.albedo_color = data["color"]
+		material.emission_enabled = true
+		material.emission = data["glow"]
+		material.emission_energy_multiplier = 1.4
+		mesh_instance.material_override = material
+		mesh_instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		pickup.add_child(mesh_instance)
+		var marker := MeshInstance3D.new()
+		var marker_mesh := BoxMesh.new()
+		marker_mesh.size = Vector3(0.18, 0.78, 0.18)
+		marker.mesh = marker_mesh
+		marker.position.y = 0.48
+		marker.material_override = material
+		marker.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		pickup.add_child(marker)
+		var label := Label3D.new()
+		label.text = str(data["name"])
+		label.position.y = 1.15
+		label.font_size = 28
+		label.pixel_size = 0.008
+		label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+		label.modulate = Color.WHITE
+		pickup.add_child(label)
+		var collision := CollisionShape3D.new()
+		var shape := SphereShape3D.new()
+		shape.radius = 1.65
+		collision.shape = shape
+		pickup.add_child(collision)
+		pickup.body_entered.connect(_on_weapon_pickup_body_entered.bind(pickup, weapon_id))
+		add_child(pickup)
+		weapon_pickups.append(pickup)
+
+func _clear_weapon_pickups() -> void:
+	for pickup in weapon_pickups:
+		if is_instance_valid(pickup):
+			pickup.queue_free()
+	weapon_pickups.clear()
+
+func _on_weapon_pickup_body_entered(body: Node3D, pickup: Area3D, weapon_id: int) -> void:
+	if body != player or round_ended or not game_started or not is_instance_valid(pickup):
+		return
+	if not owned_weapons.has(weapon_id):
+		owned_weapons.append(weapon_id)
+	current_weapon = weapon_id
+	player.call("equip_blaster", current_weapon)
+	message_label.text = "Collected %s" % WEAPON_DATA[current_weapon]["name"]
+	message_label.add_theme_color_override("font_color", Color(0.65, 1.0, 0.78))
+	weapon_pickups.erase(pickup)
+	pickup.queue_free()
+	_update_match_labels()
+
+func _cycle_weapon() -> void:
+	if not game_started or round_ended or is_paused or owned_weapons.size() < 2:
+		return
+	var current_index := owned_weapons.find(current_weapon)
+	current_index = (current_index + 1) % owned_weapons.size()
+	current_weapon = owned_weapons[current_index]
+	player.call("equip_blaster", current_weapon)
+	message_label.text = "Equipped %s" % WEAPON_DATA[current_weapon]["name"]
+	_update_match_labels()
 
 func _on_beacon_body_entered(body: Node3D, beacon: Area3D) -> void:
 	if body != player or bool(beacon.get_meta("collected", false)) or round_ended or not game_started:
@@ -790,6 +909,7 @@ func _finish_round(won: bool) -> void:
 	joystick.visible = false
 	jump_button.visible = false
 	fire_button.visible = false
+	swap_button.visible = false
 	menu_settings_button.visible = false
 	settings_label.visible = false
 	sensitivity_slider.visible = false
@@ -811,6 +931,8 @@ func _update_match_labels() -> void:
 		leading_score = maxi(leading_score, scout_score)
 	score_label.text = "SUPPLIES: %d  |  SCOUT LEAD: %d" % [score, leading_score]
 	tags_label.text = "HITS TAKEN: %d/3  |  BOTS OUT: %d/%d" % [player_tags, tagged_bots, SCOUT_COUNT]
+	weapon_label.text = "BLASTER: %s  |  COLLECTED: %d/8" % [WEAPON_DATA[current_weapon]["name"], owned_weapons.size()]
+	swap_button.disabled = owned_weapons.size() < 2
 	zone_label.text = "SAFE ZONE: %dm" % int(zone_radius)
 	energy_label.text = "STORM ENERGY: %d%%" % int(energy)
 
