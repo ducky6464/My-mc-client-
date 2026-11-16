@@ -3,14 +3,22 @@ extends Node3D
 const PlayerScript = preload("res://scripts/player.gd")
 const JoystickScript = preload("res://scripts/touch_joystick.gd")
 
+const ROUND_SECONDS := 180.0
+
 var player: CharacterBody3D
 var joystick: TouchJoystick
-var score: int = 0
-var total_cores: int = 12
+var score := 0
+var total_cores := 12
+var seconds_left := ROUND_SECONDS
 var score_label: Label
 var message_label: Label
-var look_touch: int = -1
-var game_finished: bool = false
+var timer_label: Label
+var pause_button: Button
+var overlay: ColorRect
+var overlay_title: Label
+var overlay_button: Button
+var round_ended := false
+var is_paused := false
 
 func _ready() -> void:
 	_build_world()
@@ -119,23 +127,44 @@ func _build_player() -> void:
 
 func _build_ui() -> void:
 	var layer := CanvasLayer.new()
+	layer.process_mode = Node.PROCESS_MODE_ALWAYS
 	add_child(layer)
 
 	score_label = Label.new()
-	score_label.position = Vector2(24, 20)
-	score_label.add_theme_font_size_override("font_size", 28)
+	score_label.position = Vector2(24, 18)
+	score_label.add_theme_font_size_override("font_size", 26)
 	score_label.add_theme_color_override("font_color", Color.WHITE)
 	layer.add_child(score_label)
+
+	timer_label = Label.new()
+	timer_label.anchor_left = 0.5
+	timer_label.anchor_right = 0.5
+	timer_label.position = Vector2(-70, 18)
+	timer_label.size = Vector2(140, 42)
+	timer_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	timer_label.add_theme_font_size_override("font_size", 26)
+	timer_label.add_theme_color_override("font_color", Color(0.8, 0.96, 1.0))
+	layer.add_child(timer_label)
 
 	message_label = Label.new()
 	message_label.anchor_left = 0.5
 	message_label.anchor_right = 0.5
-	message_label.position = Vector2(-210, 58)
-	message_label.size = Vector2(420, 48)
+	message_label.position = Vector2(-240, 64)
+	message_label.size = Vector2(480, 42)
 	message_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	message_label.add_theme_font_size_override("font_size", 22)
+	message_label.add_theme_font_size_override("font_size", 20)
 	message_label.add_theme_color_override("font_color", Color(0.75, 0.95, 1.0))
 	layer.add_child(message_label)
+
+	pause_button = Button.new()
+	pause_button.text = "Ⅱ"
+	pause_button.anchor_left = 1.0
+	pause_button.anchor_right = 1.0
+	pause_button.position = Vector2(-76, 16)
+	pause_button.size = Vector2(56, 52)
+	pause_button.add_theme_font_size_override("font_size", 24)
+	pause_button.pressed.connect(_toggle_pause)
+	layer.add_child(pause_button)
 
 	joystick = JoystickScript.new()
 	joystick.anchor_left = 0.0
@@ -157,34 +186,111 @@ func _build_ui() -> void:
 	jump_button.button_down.connect(_on_jump_pressed)
 	layer.add_child(jump_button)
 
+	overlay = ColorRect.new()
+	overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	overlay.color = Color(0.015, 0.035, 0.06, 0.88)
+	overlay.visible = false
+	overlay.mouse_filter = Control.MOUSE_FILTER_STOP
+	layer.add_child(overlay)
+
+	var panel := VBoxContainer.new()
+	panel.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
+	panel.position = Vector2(-190, -100)
+	panel.size = Vector2(380, 200)
+	panel.add_theme_constant_override("separation", 18)
+	overlay.add_child(panel)
+
+	overlay_title = Label.new()
+	overlay_title.text = "PAUSED"
+	overlay_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	overlay_title.add_theme_font_size_override("font_size", 34)
+	panel.add_child(overlay_title)
+
+	overlay_button = Button.new()
+	overlay_button.text = "RESUME"
+	overlay_button.custom_minimum_size = Vector2(0, 64)
+	overlay_button.add_theme_font_size_override("font_size", 24)
+	overlay_button.pressed.connect(_on_overlay_button_pressed)
+	panel.add_child(overlay_button)
+
+	var hint := Label.new()
+	hint.text = "Collect all energy cores before time runs out."
+	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	hint.add_theme_font_size_override("font_size", 16)
+	panel.add_child(hint)
+
 func _process(delta: float) -> void:
-	if player and joystick:
+	if not round_ended and not is_paused:
+		seconds_left = maxf(0.0, seconds_left - delta)
+		if seconds_left <= 0.0:
+			_finish_round(false)
+		_update_timer()
+	if player and joystick and not is_paused and not round_ended:
 		player.set_move_input(joystick.value)
 	for node in get_tree().get_nodes_in_group("rotating_cores"):
 		node.rotate_y(delta * 1.6)
 
 func _unhandled_input(event: InputEvent) -> void:
+	if round_ended or is_paused:
+		return
 	if event is InputEventScreenDrag and event.position.x > get_viewport().get_visible_rect().size.x * 0.48:
 		player.rotate_view(event.relative)
 	elif event is InputEventMouseMotion and Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT):
 		player.rotate_view(event.relative)
+	elif event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE:
+		_toggle_pause()
 
 func _on_jump_pressed() -> void:
-	if player and player.is_on_floor():
+	if not is_paused and not round_ended and player and player.is_on_floor():
 		player.velocity.y = player.jump_velocity
 
 func _on_core_body_entered(body: Node3D, core: Area3D) -> void:
-	if body != player or bool(core.get_meta("collected")):
+	if body != player or bool(core.get_meta("collected")) or round_ended:
 		return
 	core.set_meta("collected", true)
 	score += 1
 	core.queue_free()
 	_update_hud()
 	if score >= total_cores:
-		game_finished = true
-		message_label.text = "ARENA CLEARED! All energy cores collected."
+		_finish_round(true)
+
+func _toggle_pause() -> void:
+	if round_ended:
+		return
+	is_paused = not is_paused
+	get_tree().paused = is_paused
+	overlay.visible = is_paused
+	pause_button.text = "▶" if is_paused else "Ⅱ"
+	if is_paused:
+		overlay_title.text = "PAUSED"
+		overlay_button.text = "RESUME"
+	else:
+		message_label.text = "Keep collecting energy cores!"
+
+func _on_overlay_button_pressed() -> void:
+	if round_ended:
+		get_tree().reload_current_scene()
+	elif is_paused:
+		_toggle_pause()
+
+func _finish_round(won: bool) -> void:
+	round_ended = true
+	is_paused = false
+	get_tree().paused = false
+	overlay.visible = true
+	pause_button.disabled = true
+	overlay_title.text = "ARENA CLEARED!" if won else "TIME'S UP"
+	overlay_button.text = "PLAY AGAIN"
+	message_label.text = "You collected every energy core!" if won else "Try again and collect all the cores."
+
+func _update_timer() -> void:
+	var whole_seconds := int(ceil(seconds_left))
+	timer_label.text = "%02d:%02d" % [whole_seconds / 60, whole_seconds % 60]
+	if seconds_left <= 30.0:
+		timer_label.add_theme_color_override("font_color", Color(1.0, 0.72, 0.38))
 
 func _update_hud() -> void:
-	score_label.text = "ENERGY CORES: %d / %d" % [score, total_cores]
+	score_label.text = "CORES: %d / %d" % [score, total_cores]
+	_update_timer()
 	if score == 0:
 		message_label.text = "Collect every energy core. Avoid the rocks!"
