@@ -18,22 +18,25 @@ jobs:
       - name: Check out project
         uses: actions/checkout@v4
 
-      - name: Prepare Godot export templates
+      - name: Verify Android build environment
         run: |
-          mkdir -p "$HOME/.local/share/godot/export_templates"
-          cp -a /root/.local/share/godot/export_templates/4.5.stable "$HOME/.local/share/godot/export_templates/"
-          mkdir -p "$HOME/.config"
-          if [ -d /root/.config/godot ]; then
-            cp -a /root/.config/godot "$HOME/.config/"
-          fi
+          test -x /usr/lib/jvm/java-17-openjdk-amd64/bin/java
+          test -x /usr/lib/android-sdk/platform-tools/adb
+          test -f /root/debug.keystore
+          test -f /root/.config/godot/editor_settings-4.5.tres
+          echo "Java, Android SDK, debug keystore, and Godot editor settings are present."
 
       - name: Import and validate project
-        run: godot --headless --editor --path . --quit
+        run: |
+          export HOME=/root
+          godot --headless --editor --path . --quit
 
       - name: Export Android debug APK
         run: |
+          export HOME=/root
           mkdir -p build/android
-          godot --headless --path . --export-debug "Android" build/android/SkyboundSurvival-debug.apk
+          godot --headless --verbose --path . --export-debug "Android" build/android/SkyboundSurvival-debug.apk
+          test -s build/android/SkyboundSurvival-debug.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
