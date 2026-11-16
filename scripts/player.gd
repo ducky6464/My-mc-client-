@@ -40,6 +40,44 @@ func _ready() -> void:
 	camera.current = true
 	camera.fov = 75.0
 	camera_pivot.add_child(camera)
+	_add_pixel_blaster(camera)
+
+func _add_pixel_blaster(camera: Camera3D) -> void:
+	var blaster := Node3D.new()
+	blaster.name = "PixelEnergyBlaster"
+	blaster.position = Vector3(0.43, -0.43, -0.78)
+	blaster.rotation_degrees = Vector3(-5, -8, 0)
+	camera.add_child(blaster)
+	var body_material := _blaster_material(Color(0.12, 0.48, 0.72))
+	var bright_material := _blaster_material(Color(0.18, 0.86, 0.96))
+	var dark_material := _blaster_material(Color(0.12, 0.16, 0.22))
+	var glow_material := _blaster_material(Color(0.2, 0.9, 1.0), true)
+	_add_blaster_block(blaster, Vector3(0.0, 0.0, 0.0), Vector3(0.28, 0.25, 0.72), body_material)
+	_add_blaster_block(blaster, Vector3(0.0, 0.13, -0.08), Vector3(0.22, 0.13, 0.38), bright_material)
+	_add_blaster_block(blaster, Vector3(0.0, -0.22, 0.16), Vector3(0.18, 0.34, 0.22), dark_material)
+	_add_blaster_block(blaster, Vector3(0.0, 0.0, -0.43), Vector3(0.34, 0.28, 0.18), dark_material)
+	_add_blaster_block(blaster, Vector3(0.0, 0.0, -0.54), Vector3(0.2, 0.16, 0.05), glow_material)
+	_add_blaster_block(blaster, Vector3(0.18, 0.04, 0.08), Vector3(0.1, 0.12, 0.3), bright_material)
+
+func _blaster_material(tint: Color, glowing: bool = false) -> StandardMaterial3D:
+	var material := StandardMaterial3D.new()
+	material.albedo_color = tint
+	material.roughness = 0.8
+	if glowing:
+		material.emission_enabled = true
+		material.emission = tint
+		material.emission_energy_multiplier = 1.4
+	return material
+
+func _add_blaster_block(parent: Node3D, at: Vector3, dimensions: Vector3, material: Material) -> void:
+	var block := MeshInstance3D.new()
+	var cube := BoxMesh.new()
+	cube.size = dimensions
+	block.mesh = cube
+	block.position = at
+	block.material_override = material
+	block.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	parent.add_child(block)
 
 func _physics_process(delta: float) -> void:
 	if not is_on_floor():
