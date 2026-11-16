@@ -55,15 +55,13 @@ func _physics_process(delta: float) -> void:
 	var camera_yaw := camera_pivot.global_rotation.y
 	var forward := Vector3(sin(camera_yaw), 0.0, cos(camera_yaw))
 	var right := Vector3(forward.z, 0.0, -forward.x)
+	if input_vector.length() < 0.05:
+		input_vector.y = -input_vector.y
 	var direction := (right * input_vector.x - forward * input_vector.y).normalized()
 
 	velocity.x = direction.x * move_speed
 	velocity.z = direction.z * move_speed
 	move_and_slide()
-
-	if direction.length() > 0.1:
-		var target_yaw := atan2(direction.x, direction.z)
-		rotation.y = lerp_angle(rotation.y, target_yaw, delta * 10.0)
 
 func rotate_view(delta_pixels: Vector2) -> void:
 	camera_pivot.rotation.y -= delta_pixels.x * look_sensitivity
