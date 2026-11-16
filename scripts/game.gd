@@ -12,6 +12,7 @@ var score := 0
 var total_cores := 12
 var seconds_left := ROUND_SECONDS
 var best_score := 0
+var saved_sensitivity := 0.0035
 var score_label: Label
 var message_label: Label
 var timer_label: Label
@@ -131,6 +132,7 @@ func _build_player() -> void:
 	player = PlayerScript.new()
 	player.name = "Player"
 	player.position = Vector3(0, 0.2, 0)
+	player.look_sensitivity = saved_sensitivity
 	add_child(player)
 	player.set_physics_process(false)
 
@@ -279,6 +281,8 @@ func _show_settings() -> void:
 func _on_sensitivity_changed(value: float) -> void:
 	if player:
 		player.look_sensitivity = value / 1000.0
+		saved_sensitivity = player.look_sensitivity
+		_save_progress()
 
 func _start_game() -> void:
 	game_started = true
@@ -365,6 +369,7 @@ func _finish_round(won: bool) -> void:
 	overlay_mode = "finished"
 	overlay.visible = true
 	pause_button.disabled = true
+	player.set_physics_process(false)
 	joystick.visible = false
 	jump_button.visible = false
 	menu_settings_button.visible = false
@@ -382,6 +387,7 @@ func _load_progress() -> void:
 	var config := ConfigFile.new()
 	if config.load(SAVE_PATH) == OK:
 		best_score = int(config.get_value("progress", "best_score", 0))
+		saved_sensitivity = float(config.get_value("settings", "look_sensitivity", 0.0035))
 
 func _save_progress() -> void:
 	var config := ConfigFile.new()
