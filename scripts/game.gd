@@ -13,7 +13,7 @@ const BEACON_COUNT := 24
 var player: CharacterBody3D
 var joystick: TouchJoystick
 var jump_button: Button
-var tag_button: Button
+var fire_button: Button
 var score := 0
 var seconds_left := ROUND_SECONDS
 var elapsed := 0.0
@@ -48,6 +48,10 @@ var scout_tagged: Array[bool] = []
 var scout_contact_cooldowns: Array[float] = []
 var player_tags := 0
 var player_tag_cooldown := 0.0
+var fire_cooldown := 0.0
+var projectiles: Array[Node3D] = []
+var projectile_directions: Array[Vector3] = []
+var projectile_lifetimes: Array[float] = []
 var tagged_bots := 0
 var tags_label: Label
 var scout_targets: Array[Area3D] = []
@@ -406,17 +410,17 @@ func _build_ui() -> void:
 	jump_button.visible = false
 	layer.add_child(jump_button)
 
-	tag_button = Button.new()
-	tag_button.text = "TAG"
-	tag_button.anchor_left = 1.0
-	tag_button.anchor_top = 1.0
-	tag_button.anchor_right = 1.0
-	tag_button.anchor_bottom = 1.0
-	tag_button.position = Vector2(-150, -220)
-	tag_button.size = Vector2(112, 66)
-	tag_button.add_theme_font_size_override("font_size", 22)
-	tag_button.pressed.connect(_on_tag_pressed)
-	tag_button.visible = false
+	fire_button = Button.new()
+	fire_button.text = "FIRE"
+	fire_button.anchor_left = 1.0
+	fire_button.anchor_top = 1.0
+	fire_button.anchor_right = 1.0
+	fire_button.anchor_bottom = 1.0
+	fire_button.position = Vector2(-150, -220)
+	fire_button.size = Vector2(112, 66)
+	fire_button.add_theme_font_size_override("font_size", 22)
+	fire_button.pressed.connect(_on_fire_pressed)
+	fire_button.visible = false
 	layer.add_child(tag_button)
 
 	tags_label = Label.new()
@@ -476,7 +480,7 @@ func _build_ui() -> void:
 	panel.add_child(sensitivity_slider)
 
 	var hint := Label.new()
-	hint.text = "OFFLINE MATCH • 1 PLAYER + 6 AI SCOUTS\nCollect supplies, stay in the safe zone, and tag nearby scouts before they tag you. No internet required."
+	hint.text = "OFFLINE MATCH • 1 PLAYER + 6 AI SCOUTS\nCollect supplies, use your pixel energy blaster, and stay inside the shrinking safe zone. No internet required."
 	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	hint.add_theme_font_size_override("font_size", 16)
@@ -494,7 +498,7 @@ func _show_main_menu() -> void:
 	pause_button.visible = false
 	joystick.visible = false
 	jump_button.visible = false
-	tag_button.visible = false
+	fire_button.visible = false
 	zone_label.visible = false
 	energy_label.visible = false
 	tags_label.visible = false
@@ -527,6 +531,13 @@ func _start_game() -> void:
 	player_tags = 0
 	tagged_bots = 0
 	player_tag_cooldown = 0.0
+	fire_cooldown = 0.0
+	for projectile in projectiles:
+		if is_instance_valid(projectile):
+			projectile.queue_free()
+	projectiles.clear()
+	projectile_directions.clear()
+	projectile_lifetimes.clear()
 	scout_retarget_timer = 0.0
 	player.position = Vector3(0, 0.2, 0)
 	player.velocity = Vector3.ZERO
@@ -549,7 +560,7 @@ func _start_game() -> void:
 	pause_button.disabled = false
 	joystick.visible = true
 	jump_button.visible = true
-	tag_button.visible = true
+	fire_button.visible = true
 	zone_label.visible = true
 	energy_label.visible = true
 	tags_label.visible = true
@@ -564,6 +575,7 @@ func _process(delta: float) -> void:
 		zone_ring.scale = Vector3(zone_radius, 1.0, zone_radius)
 		_update_survival_energy(delta)
 		_update_scouts(delta)
+		_update_projectiles(delta)
 		if seconds_left <= 0.0:
 			_finish_round(true)
 		_update_timer()
@@ -637,30 +649,69 @@ func _update_scouts(delta: float) -> void:
 	if scout_retarget_timer <= 0.0:
 		scout_retarget_timer = 1.4
 
-func _on_tag_pressed() -> void:
-	if not game_started or round_ended or is_paused or player_tag_cooldown > 0.0:
+func _on_fire_pressed() -> void:
+	if not game_started or round_ended or is_paused or fire_cooldown > 0.0:
 		return
-	var nearest_index := -1
-	var nearest_distance := 4.2
-	for i in range(scouts.size()):
-		if scout_tagged[i] or not is_instance_valid(scouts[i]):
+	fire_cooldown = 0.32
+	var camera := player.camera_pivot.get_child(0) as Camera3D
+	var direction := -camera.global_transform.basis.z.normalized()
+	var projectile := Node3D.new()
+	projectile.name = "EnergyBolt"
+	var orb := MeshInstance3D.new()
+	var orb_mesh := SphereMesh.new()
+	orb_mesh.radius = 0.19
+	orb_mesh.height = 0.38
+	orb.mesh = orb_mesh
+	var material := StandardMaterial3D.new()
+	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	material.albedo_color = Color(0.22, 0.88, 1.0)
+	material.emission_enabled = true
+	material.emission = Color(0.08, 0.55, 1.0)
+	material.emission_energy_multiplier = 2.0
+	orb.material_override = material
+	projectile.add_child(orb)
+	projectile.global_position = camera.global_position + direction * 1.1
+	add_child(projectile)
+	projectiles.append(projectile)
+	projectile_directions.append(direction)
+	projectile_lifetimes.append(1.8)
+
+func _update_projectiles(delta: float) -> void:
+	fire_cooldown = maxf(0.0, fire_cooldown - delta)
+	for i in range(projectiles.size() - 1, -1, -1):
+		var projectile := projectiles[i]
+		if not is_instance_valid(projectile):
+			_remove_projectile(i)
 			continue
-		var distance := player.global_position.distance_to(scouts[i].global_position)
-		if distance < nearest_distance:
-			nearest_distance = distance
-			nearest_index = i
-	if nearest_index < 0:
-		message_label.text = "Get closer to a scout to tag them."
-		return
-	scout_tagged[nearest_index] = true
-	scouts[nearest_index].visible = false
-	scout_targets[nearest_index] = null
-	tagged_bots += 1
-	player_tag_cooldown = 0.8
-	message_label.text = "Scout tagged! %d of %d out." % [tagged_bots, SCOUT_COUNT]
-	_update_match_labels()
-	if tagged_bots >= SCOUT_COUNT:
-		_finish_round(true)
+		projectile.global_position += projectile_directions[i] * 27.0 * delta
+		projectile_lifetimes[i] -= delta
+		var hit_index := -1
+		for scout_index in range(scouts.size()):
+			if scout_tagged[scout_index] or not is_instance_valid(scouts[scout_index]):
+				continue
+			if projectile.global_position.distance_to(scouts[scout_index].global_position + Vector3.UP * 0.9) < 1.0:
+				hit_index = scout_index
+				break
+		if hit_index >= 0:
+			scout_tagged[hit_index] = true
+			scouts[hit_index].visible = false
+			scout_targets[hit_index] = null
+			tagged_bots += 1
+			message_label.text = "Scout popped! %d of %d bots out." % [tagged_bots, SCOUT_COUNT]
+			_update_match_labels()
+			_remove_projectile(i)
+			if tagged_bots >= SCOUT_COUNT:
+				_finish_round(true)
+			continue
+		if projectile_lifetimes[i] <= 0.0:
+			_remove_projectile(i)
+
+func _remove_projectile(index: int) -> void:
+	if is_instance_valid(projectiles[index]):
+		projectiles[index].queue_free()
+	projectiles.remove_at(index)
+	projectile_directions.remove_at(index)
+	projectile_lifetimes.remove_at(index)
 
 func _nearest_available_beacon(from_position: Vector3) -> Area3D:
 	var nearest: Area3D = null
@@ -738,7 +789,7 @@ func _finish_round(won: bool) -> void:
 	player.set_physics_process(false)
 	joystick.visible = false
 	jump_button.visible = false
-	tag_button.visible = false
+	fire_button.visible = false
 	menu_settings_button.visible = false
 	settings_label.visible = false
 	sensitivity_slider.visible = false
@@ -759,7 +810,7 @@ func _update_match_labels() -> void:
 	for scout_score in scout_scores:
 		leading_score = maxi(leading_score, scout_score)
 	score_label.text = "SUPPLIES: %d  |  SCOUT LEAD: %d" % [score, leading_score]
-	tags_label.text = "YOUR TAGS: %d/3  |  SCOUTS OUT: %d/%d" % [player_tags, tagged_bots, SCOUT_COUNT]
+	tags_label.text = "HITS TAKEN: %d/3  |  BOTS OUT: %d/%d" % [player_tags, tagged_bots, SCOUT_COUNT]
 	zone_label.text = "SAFE ZONE: %dm" % int(zone_radius)
 	energy_label.text = "STORM ENERGY: %d%%" % int(energy)
 
