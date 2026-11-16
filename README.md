@@ -46,3 +46,13 @@ The first workflow run is the real check that the export setup works. The APK ha
 - Audio, accessibility options and full settings menu.
 - Cloud saves and progression.
 - Performance testing on physical Android devices.
+
+
+## Mobile performance
+
+- The HUD includes a live FPS counter, refreshed four times per second.
+- The project targets landscape orientation and caps the frame rate at 60 FPS.
+- The mobile renderer uses Godot's Compatibility renderer with 3D resolution scaling set to 80%.
+- Dynamic shadows are disabled, and obstacle/collectible meshes and materials are shared to reduce rendering overhead.
+- The timer display updates only when the displayed second changes.
+- These are performance-oriented settings, not a guarantee of a particular FPS. Actual performance still needs testing on a physical Android phone.
