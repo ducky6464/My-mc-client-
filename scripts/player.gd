@@ -43,21 +43,35 @@ func _ready() -> void:
 	_add_pixel_blaster(camera)
 
 func _add_pixel_blaster(camera: Camera3D) -> void:
+	# A deliberately chunky, Minecraft-style fictional blaster silhouette.
+	# It reads as a game prop, not as a realistic or functional firearm.
 	var blaster := Node3D.new()
-	blaster.name = "PixelEnergyBlaster"
+	blaster.name = "PixelBlaster"
 	blaster.position = Vector3(0.43, -0.43, -0.78)
 	blaster.rotation_degrees = Vector3(-5, -8, 0)
 	camera.add_child(blaster)
-	var body_material := _blaster_material(Color(0.12, 0.48, 0.72))
-	var bright_material := _blaster_material(Color(0.18, 0.86, 0.96))
-	var dark_material := _blaster_material(Color(0.12, 0.16, 0.22))
+
+	var body_material := _blaster_material(Color(0.16, 0.2, 0.27))
+	var top_material := _blaster_material(Color(0.28, 0.34, 0.42))
+	var accent_material := _blaster_material(Color(0.12, 0.68, 0.82))
+	var grip_material := _blaster_material(Color(0.09, 0.13, 0.19))
 	var glow_material := _blaster_material(Color(0.2, 0.9, 1.0), true)
-	_add_blaster_block(blaster, Vector3(0.0, 0.0, 0.0), Vector3(0.28, 0.25, 0.72), body_material)
-	_add_blaster_block(blaster, Vector3(0.0, 0.13, -0.08), Vector3(0.22, 0.13, 0.38), bright_material)
-	_add_blaster_block(blaster, Vector3(0.0, -0.22, 0.16), Vector3(0.18, 0.34, 0.22), dark_material)
-	_add_blaster_block(blaster, Vector3(0.0, 0.0, -0.43), Vector3(0.34, 0.28, 0.18), dark_material)
-	_add_blaster_block(blaster, Vector3(0.0, 0.0, -0.54), Vector3(0.2, 0.16, 0.05), glow_material)
-	_add_blaster_block(blaster, Vector3(0.18, 0.04, 0.08), Vector3(0.1, 0.12, 0.3), bright_material)
+
+	# Main receiver and a long, squared-off fictional barrel.
+	_add_blaster_block(blaster, Vector3(0.0, 0.0, 0.02), Vector3(0.34, 0.3, 0.62), body_material)
+	_add_blaster_block(blaster, Vector3(0.0, 0.015, -0.43), Vector3(0.2, 0.19, 0.48), top_material)
+	_add_blaster_block(blaster, Vector3(0.0, 0.015, -0.7), Vector3(0.27, 0.25, 0.16), accent_material)
+	_add_blaster_block(blaster, Vector3(0.0, 0.015, -0.8), Vector3(0.16, 0.15, 0.06), glow_material)
+
+	# Blocky rear stock, top rail and a simple raised sight.
+	_add_blaster_block(blaster, Vector3(0.0, 0.015, 0.43), Vector3(0.3, 0.24, 0.34), top_material)
+	_add_blaster_block(blaster, Vector3(0.0, 0.19, -0.08), Vector3(0.18, 0.09, 0.25), accent_material)
+	_add_blaster_block(blaster, Vector3(0.0, 0.27, -0.08), Vector3(0.1, 0.08, 0.1), body_material)
+
+	# Downward grip and a squared trigger-guard accent make the silhouette readable.
+	_add_blaster_block(blaster, Vector3(0.0, -0.25, 0.17), Vector3(0.2, 0.38, 0.22), grip_material)
+	_add_blaster_block(blaster, Vector3(0.0, -0.18, -0.06), Vector3(0.24, 0.08, 0.16), accent_material)
+	_add_blaster_block(blaster, Vector3(0.19, 0.0, 0.06), Vector3(0.08, 0.16, 0.28), accent_material)
 
 func _blaster_material(tint: Color, glowing: bool = false) -> StandardMaterial3D:
 	var material := StandardMaterial3D.new()
