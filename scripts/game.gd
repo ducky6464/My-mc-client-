@@ -456,6 +456,29 @@ func _build_ui() -> void:
 	tags_label.add_theme_color_override("font_color", Color(1.0, 0.82, 0.48))
 	layer.add_child(tags_label)
 
+	weapon_label = Label.new()
+	weapon_label.anchor_left = 1.0
+	weapon_label.anchor_right = 1.0
+	weapon_label.position = Vector2(-360, 108)
+	weapon_label.size = Vector2(330, 28)
+	weapon_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	weapon_label.add_theme_font_size_override("font_size", 16)
+	weapon_label.add_theme_color_override("font_color", Color(0.78, 0.9, 1.0))
+	layer.add_child(weapon_label)
+
+	swap_button = Button.new()
+	swap_button.text = "SWAP"
+	swap_button.anchor_left = 1.0
+	swap_button.anchor_top = 1.0
+	swap_button.anchor_right = 1.0
+	swap_button.anchor_bottom = 1.0
+	swap_button.position = Vector2(-150, -72)
+	swap_button.size = Vector2(112, 52)
+	swap_button.add_theme_font_size_override("font_size", 18)
+	swap_button.pressed.connect(_cycle_weapon)
+	swap_button.visible = false
+	layer.add_child(swap_button)
+
 	overlay = ColorRect.new()
 	overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	overlay.color = Color(0.015, 0.035, 0.06, 0.9)
@@ -739,10 +762,6 @@ func _finish_landing() -> void:
 	_update_match_labels()
 	if player and joystick and not is_paused and game_started and not round_ended:
 		player.set_move_input(joystick.value)
-	fps_update_accumulator += delta
-	if fps_update_accumulator >= 0.25:
-		fps_update_accumulator = 0.0
-		fps_label.text = "FPS: %d" % Engine.get_frames_per_second()
 
 func _update_survival_energy(delta: float) -> void:
 	var distance_from_center := Vector2(player.global_position.x, player.global_position.z).length()
