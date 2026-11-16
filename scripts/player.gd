@@ -50,13 +50,12 @@ func _physics_process(delta: float) -> void:
 	var input_vector := move_input
 	if input_vector.length() < 0.05:
 		input_vector = Input.get_vector("move_left", "move_right", "move_forward", "move_back")
+		input_vector.y = -input_vector.y
 	input_vector = input_vector.limit_length(1.0)
 
 	var camera_yaw := camera_pivot.global_rotation.y
 	var forward := Vector3(sin(camera_yaw), 0.0, cos(camera_yaw))
 	var right := Vector3(forward.z, 0.0, -forward.x)
-	if input_vector.length() < 0.05:
-		input_vector.y = -input_vector.y
 	var direction := (right * input_vector.x - forward * input_vector.y).normalized()
 
 	velocity.x = direction.x * move_speed
