@@ -61,6 +61,7 @@ var scout_contact_cooldowns: Array[float] = []
 var player_tags := 0
 var player_tag_cooldown := 0.0
 var fire_cooldown := 0.0
+var fire_held := false
 var projectiles: Array[Node3D] = []
 var projectile_directions: Array[Vector3] = []
 var projectile_lifetimes: Array[float] = []
@@ -436,7 +437,8 @@ func _build_ui() -> void:
 	fire_button.position = Vector2(-150, -220)
 	fire_button.size = Vector2(112, 66)
 	fire_button.add_theme_font_size_override("font_size", 22)
-	fire_button.pressed.connect(_on_fire_pressed)
+	fire_button.button_down.connect(_on_fire_pressed)
+	fire_button.button_up.connect(_on_fire_released)
 	fire_button.visible = false
 	layer.add_child(fire_button)
 
@@ -554,6 +556,7 @@ func _start_game() -> void:
 	player.call("equip_blaster", current_weapon)
 	player_tag_cooldown = 0.0
 	fire_cooldown = 0.0
+	fire_held = false
 	for projectile in projectiles:
 		if is_instance_valid(projectile):
 			projectile.queue_free()
@@ -603,6 +606,8 @@ func _process(delta: float) -> void:
 		zone_ring.scale = Vector3(zone_radius, 1.0, zone_radius)
 		_update_survival_energy(delta)
 		_update_scouts(delta)
+		if fire_held:
+			_on_fire_pressed()
 		_update_projectiles(delta)
 		if seconds_left <= 0.0:
 			_finish_round(true)
@@ -678,6 +683,7 @@ func _update_scouts(delta: float) -> void:
 		scout_retarget_timer = 1.4
 
 func _on_fire_pressed() -> void:
+	fire_held = true
 	if not game_started or round_ended or is_paused or fire_cooldown > 0.0:
 		return
 	var data: Dictionary = WEAPON_DATA[current_weapon]
@@ -693,9 +699,9 @@ func _on_fire_pressed() -> void:
 		var projectile := Node3D.new()
 		projectile.name = "ArcadeEnergyProjectile"
 		var orb := MeshInstance3D.new()
-		var orb_mesh := SphereMesh.new()
-		orb_mesh.radius = float(data["radius"])
-		orb_mesh.height = float(data["radius"]) * 2.0
+		var orb_mesh := BoxMesh.new()
+		var pixel_size := maxf(0.12, float(data["radius"]) * 1.15)
+		orb_mesh.size = Vector3(pixel_size, pixel_size, pixel_size * 1.8)
 		orb.mesh = orb_mesh
 		var material := StandardMaterial3D.new()
 		material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
@@ -705,14 +711,33 @@ func _on_fire_pressed() -> void:
 		material.emission_energy_multiplier = 2.0
 		orb.material_override = material
 		projectile.add_child(orb)
+		var tracer := MeshInstance3D.new()
+		tracer.name = "PixelTracer"
+		var tracer_mesh := BoxMesh.new()
+		tracer_mesh.size = Vector3(0.045, 0.045, 0.72)
+		tracer.mesh = tracer_mesh
+		var tracer_material := StandardMaterial3D.new()
+		tracer_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		tracer_material.albedo_color = tint
+		tracer_material.emission_enabled = true
+		tracer_material.emission = glow
+		tracer_material.emission_energy_multiplier = 2.5
+		tracer.material_override = tracer_material
+		tracer.position.z = 0.43
+		tracer.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		projectile.add_child(tracer)
 		var side_offset := camera.global_transform.basis.x * centered_index * 0.07
 		projectile.global_position = camera.global_position + direction * 1.1 + side_offset
 		add_child(projectile)
+		projectile.look_at(projectile.global_position + direction, Vector3.UP)
 		projectiles.append(projectile)
 		projectile_directions.append(direction)
 		projectile_lifetimes.append(float(data["life"]))
 		projectile_speeds.append(float(data["speed"]))
 		projectile_radii.append(float(data["radius"]))
+
+func _on_fire_released() -> void:
+	fire_held = false
 
 func _update_projectiles(delta: float) -> void:
 	fire_cooldown = maxf(0.0, fire_cooldown - delta)
@@ -873,6 +898,8 @@ func _toggle_pause() -> void:
 	if not game_started or round_ended:
 		return
 	is_paused = not is_paused
+	if is_paused:
+		fire_held = false
 	get_tree().paused = is_paused
 	overlay.visible = is_paused
 	pause_button.text = "▶" if is_paused else "Ⅱ"
@@ -900,6 +927,7 @@ func _finish_round(won: bool) -> void:
 	if round_ended:
 		return
 	round_ended = true
+	fire_held = false
 	is_paused = false
 	get_tree().paused = false
 	overlay_mode = "finished"
